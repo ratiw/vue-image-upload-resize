@@ -25,7 +25,7 @@
         :preview="true"
         :className="['fileinput', { 'fileinput--loaded': hasImage }]"
         capture="environment"
-        :debug="0"
+        :debug="2"
         :autoRotate="true"
         outputFormat="verbose"
         @input="setImage"
@@ -44,7 +44,7 @@
           methods: {
             setImage: function(output) {
               this.hasImage = true
-              console.log(output)
+              console.log('>>>>>', output, output.dataUrl.length)
             },
           },
         })

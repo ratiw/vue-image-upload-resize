@@ -1,6 +1,7 @@
 <template>
   <div>
-    <img v-show="imagePreview" :src="imagePreview" class="img-preview" width="400" /> <input :id="id" :class="className" type="file" @change="uploadFile" :accept="accept" :capture="capture" />
+    <img v-show="imagePreview" :src="imagePreview" class="img-preview" width="400" /> 
+    <input :id="id" :class="className" type="file" multiple @change="uploadFile" :accept="accept" :capture="capture" />
     <slot name="upload-label"></slot>
   </div>
 </template>
@@ -200,6 +201,9 @@ export default {
     return {
       imagePreview: null,
       currentFile: {},
+      attachments: [
+        // { imagePreview, File object }
+      ],
     }
   },
 
@@ -217,8 +221,16 @@ export default {
     uploadFile(e) {
       const file = e.target.files && e.target.files.length ? e.target.files[0] : null
       if (file) {
-        this.emitLoad()
-        this.handleFile(file)
+        const files = e.target.files
+        for (var i = 0; i < files.length; i++) {
+          console.log('attaching file: ', i, files[i].name)
+          this.attachments.push({
+            imagePreview : null,
+            file : files[i],
+          })
+          this.emitLoad()
+          this.handleFile(file, i)
+        }
       }
     },
 
@@ -245,7 +257,7 @@ export default {
      * @param  {File}     file The current original uploaded file
      * @return {}         nada (yet)
      */
-    handleFile(file) {
+    async handleFile(file, idx) {
       this.log('handleFile() is called with file:', 2, file)
       this.currentFile = file
 
@@ -255,34 +267,51 @@ export default {
 
       // Don't resize if not image or doNotResize is set
       if (!isImage || doNotResize.includes('*') || doNotResize.includes(mimetype[1])) {
-        this.log('No Resize, return file directly')
+        // this.log('No Resize, return file directly')
+        console.log('No Resize, return file directly')
         this.emitEvent(file) // does NOT respect the output format prop
         this.emitComplete()
       } else {
         const that = this
-        const img = document.createElement('img')
-        const reader = new window.FileReader()
+        const img = document.createElement('img') 
 
-        reader.onload = function(e) {
-          that.log('reader.onload() is triggered', 2)
-
-          img.src = e.target.result
-          img.onload = function() {
-            that.log('img.onload() is triggered', 2)
+        try {
+          img.src = await this.readFile(file)
+          img.onload = () => {
+            console.log('img.onload() is triggered', 2)
 
             if (that.autoRotate && that.hasExifLibrary) {
               EXIF.getData(img, function() {
                 const orientation = EXIF.getTag(this, 'Orientation')
                 that.log('ImageUploader: image orientation from EXIF tag = ' + orientation)
-                that.scaleImage(img, orientation)
+                that.scaleImage(img, orientation, idx)
               })
             } else {
-              that.scaleImage(img)
+              that.scaleImage(img, 1, idx)
             }
           }
+          this.imagePreview = img.src
+        } catch(e) {
+          console.warn(e.message)
         }
-        reader.readAsDataURL(file)
       }
+    },
+
+    readFile(inputFile) {
+      const tempFileReader = new FileReader()
+
+      return new Promise((resolve, reject) => {
+        tempFileReader.onerror = () => {
+          tempFileReader.abort()
+          reject(new DOMException('Problem parsing input file'))
+        }
+
+        tempFileReader.onload = () => {
+          resolve(tempFileReader.result)
+        }
+
+        tempFileReader.readAsDataURL(inputFile)
+      })
     },
 
     /**
@@ -290,8 +319,13 @@ export default {
      * @param  {HTMLElement} img -  A document img element containing the uploaded file as a base764 encoded string as source
      * @param  {int} [orientation = 1] - Exif-extracted orientation code
      */
-    scaleImage(img, orientation = 1) {
+    scaleImage(img, orientation = 1, idx) {
       this.log('scaleImage() is called', 2)
+
+      if (img.width <= this.maxWidth && img.height <= this.maxHeight) {
+        console.log('image width and height is smaller, do not scale')
+        return
+      }
 
       let canvas = document.createElement('canvas')
       canvas.width = img.width
@@ -393,6 +427,7 @@ export default {
       // Display preview of the new image
       if (this.preview) {
         this.imagePreview = imageData
+        this.attachments[idx].imagePreview = imageData
       }
 
       // Return the new image
